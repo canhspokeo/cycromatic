@@ -1,0 +1,252 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Cyclomatic Complexity Viewer</title>
+    <link rel="stylesheet" href="html_styles.css">
+    <style>
+      {{styles}}
+    </style>
+  </head>
+  <body>
+    <div id="root" />
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel">
+      const { useState, useRef } = React;
+
+      (function () {
+        const initialData = {};
+
+        function MyApp() {
+          const [fullResults, setFullResults] = useState(initialData);
+          const [results, setResults] = useState(fullResults);
+          const [fileName, setFileName] = useState('');
+          const [methodName, setMethodName] = useState('');
+          const [complexity, setComplexity] = useState('');
+          const [includeTopLevel, setIncludeTopLevel] = useState(true);
+          const fileInputRef = useRef(null);
+          const mainContainerRef = useRef(null);
+
+          const filter = (fn, mn, com) =>
+            setTimeout((file, method, com) => {
+              const filterByFile = (f) => file === '' || f.includes(file);
+              const filterByMethod = (m) => method === '' || m.includes(method);
+              let filterByComplexity = (_) => com === '';
+
+              const complexityFilterInfo = /^(?<op>=|>|>=|<|<=)?\s*(?<num>\d+)$/.exec(com)?.groups;
+              if (complexityFilterInfo) {
+                const complexityNum = parseInt(complexityFilterInfo.num);
+                switch (complexityFilterInfo?.op || '=') {
+                  case '=':
+                    filterByComplexity = c => c === complexityNum;
+                    break;
+                  case '>':
+                    filterByComplexity = c => c > complexityNum;
+                    break;
+                  case '>=':
+                    filterByComplexity = c => c >= complexityNum;
+                    break;
+                  case '<':
+                    filterByComplexity = c => c < complexityNum;
+                    break;
+                  case '<=':
+                    filterByComplexity = c => c <= complexityNum;
+                    break;
+                }
+              }
+
+              const filteredResults = Object.entries(fullResults)
+                .reduce((previousValue, [filename, {results}]) => {
+                  if (filterByFile(filename)) {
+                    const newResults = results.filter(({method, complexity}) => filterByMethod(method) && filterByComplexity(complexity));
+                    if (newResults.length > 0) {
+                      previousValue[filename] = { results: newResults };
+                    }
+                  }
+                  return previousValue;
+                }, {});
+
+              setResults(filteredResults);
+            },1000, fn.trim(), mn.trim(), com.trim());
+
+          const handleFileNameChange = (e) => {
+            const value = e.target.value;
+            setFileName(value);
+            const timeoutId = filter(value, methodName, complexity);
+            return () => clearTimeout(timeoutId);
+          };
+
+          const handleMethodNameChange = (e) => {
+            const value = e.target.value;
+            setMethodName(value);
+            const timeoutId = filter(fileName, value, complexity);
+            return () => clearTimeout(timeoutId);
+          };
+
+          const handleComplexityChange = (e) => {
+            const value = e.target.value;
+            setComplexity(value);
+            const timeoutId = filter(fileName, methodName, value);
+            return () => clearTimeout(timeoutId);
+          };
+
+          const readFile = async (file) => {
+            if (!file) return;
+            const text = await file.text();
+            const results = JSON.parse(text);
+            setFullResults(results);
+            setResults(results);
+          }
+
+          const handleFileInputChange = async (ev) => {
+            if (ev.target.files) {
+              await readFile(ev.target.files[0]);
+            }
+          };
+
+          const handleFileDrop = async (ev) => {
+            ev.preventDefault();
+            if (ev.dataTransfer?.items) {
+              await readFile(ev.dataTransfer?.items[0].getAsFile());
+            } else {
+              await readFile(ev.dataTransfer.files[0]);
+            }
+            if (mainContainerRef.current) {
+              mainContainerRef.current.style.border = 'none';
+            }
+          }
+
+          const handleDragOver = (ev) => {
+            ev.preventDefault();
+            if (mainContainerRef.current) {
+              mainContainerRef.current.style.border = '3px solid green';
+            }
+          };
+
+          return (
+            <div
+              className="p-50"
+              ref={mainContainerRef}
+              onDrop={handleFileDrop}
+              onDragOver={handleDragOver}
+            >
+              <h1 className="font-44 font-bold text-center pb-50">Cyclomatic Complexity Viewer</h1>
+              <input
+                className="hidden"
+                ref={fileInputRef}
+                type="file"
+                accept=".json, application/json"
+                onChange={handleFileInputChange}
+              />
+
+              <div className="flex justify-between items-start mb-20 font-20">
+                <div>
+                  <div>
+                    {`Files: ${Object.keys(results).length} of ${Object.keys(fullResults).length}`}
+                  </div>
+                  <div>
+                    {(() => {
+                        const len = Object.values(results)
+                          .map(value => value.results)
+                          .flat()
+                          .filter(result => includeTopLevel || result.method !== '[toplevel]')
+                          .length;
+                        const lenTotal = Object.values(fullResults).map(value => value.results).flat().length - (includeTopLevel ? 0 : Object.keys(results).length);
+                        return `Methods: ${len} out of ${lenTotal} ${len !== lenTotal ? `(${(100 * len / lenTotal).toFixed(2)}%)` : ''}`
+                      })()
+                    }
+                  </div>
+                  <div>
+                    <input
+                      id="include-top-level-checkbox"
+                      type="checkbox"
+                      checked={includeTopLevel}
+                      onClick={() => setIncludeTopLevel(x => !x)}
+                      className="mr-10 w-20"
+                    />
+                    <label
+                      htmlFor="include-top-level-checkbox"
+                      className="v-align-bottom"
+                    >
+                      Include top level
+                    </label>
+                  </div>
+                </div>
+                <a
+                  className="cursor-pointer border rounded px-16 py-10 bg-blue-50"
+                  onClick={() => fileInputRef?.current?.click()}
+                >
+                  Choose File
+                </a>
+              </div>
+
+              {/* Table header */}
+              <div className="border flex bg-amber-100 font-bold">
+                <div className="w-70 p-10">#</div>
+                <div className="flex-grow border-l p-10">
+                  <label htmlFor="file-name" className="inline-block">File Name</label>
+                  <input
+                    className="w-full font-16 px-10 mt-10"
+                    id='file-name'
+                    placeholder="Filter by file name"
+                    value={fileName}
+                    onChange={handleFileNameChange}
+                  />
+                </div>
+                <div className="w-400 border-l p-10">
+                  <label htmlFor="method-name">Method Name</label>
+                  <input
+                    className="w-full font-16 px-10 mt-10"
+                    id="method-name"
+                    placeholder="Filter by method name"
+                    value={methodName}
+                    onChange={handleMethodNameChange}
+                  />
+                </div>
+                <div className="w-120 text-center border-l p-10">
+                  <label htmlFor="complexity">Complexity</label>
+                  <input
+                    className="w-full font-16 px-10 mt-10"
+                    id="complexity"
+                    value={complexity}
+                    placeholder="e.g. 5, >5"
+                    onChange={handleComplexityChange}
+                  />
+                </div>
+              </div>
+
+              {/* Table content */}
+              {Object.entries(results).map(([fileName, { results }], i) => (
+                <article
+                  key={fileName}
+                  className="border-x border-b flex break-all even-result-row-bg-gray-100"
+                >
+                  <div className="w-70 p-10">{i + 1}</div>
+                  <div className="flex-grow border-l p-10">{fileName}</div>
+                  <div className="border-l">
+                    {results.map(result => (
+                      <div key={result.method} className="border-b last-no-border flex flex-row">
+                        <div className="w-400 p-10">
+                          {result.method}
+                        </div>
+                        <div className="w-120 p-10 border-l text-center">
+                          {result.complexity}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          );
+        }
+
+        // Render the app
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<MyApp />);
+      })();
+    </script>
+  </body>
+</html>
