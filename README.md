@@ -31,4 +31,4 @@ It calculates complexities as the following:
 * Passing iterator block does not introduce complexity
 
 ## Note
-This is a modification of `[cycromatic](https://github.com/soutaro/cycromatic)` gem.
+This is a modification of [cycromatic](https://github.com/soutaro/cycromatic) gem.
